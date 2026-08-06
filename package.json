@@ -1,0 +1,12 @@
+{
+  "name": "kkbox-charts-scraper",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "discover": "node discover_charts.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  }
+}

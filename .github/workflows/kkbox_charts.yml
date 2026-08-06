@@ -1,0 +1,27 @@
+name: Scrape KKBOX Charts
+
+on:
+  schedule:
+    - cron: "0 3 * * *"   # UTC 03:00 = 台北 11:00
+  workflow_dispatch: {}
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install
+      - run: node kkbox_charts_scrape.js
+        env:
+          KKBOX_CLIENT_ID: ${{ secrets.KKBOX_CLIENT_ID }}
+          KKBOX_CLIENT_SECRET: ${{ secrets.KKBOX_CLIENT_SECRET }}
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git diff --staged --quiet || git commit -m "Add KKBOX chart snapshot $(date -u +%Y-%m-%d)"
+          git push
