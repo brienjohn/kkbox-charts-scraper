@@ -92,6 +92,11 @@ async function runCombo(timeframe, category, genreName, type, date, outDir) {
   return mapped.length;
 }
 
+function comboExists(type, timeframe) {
+  // KKBOX 沒有「專輯日榜」這個產品，只有專輯週榜，其餘組合都存在
+  return !(type === "album" && timeframe === "daily");
+}
+
 async function runCurrent(outDir) {
   // KKBOX「今天」的榜通常還沒算完，查詢用「昨天」比較穩，
   // captured_date（我們抓取的日期）另外記錄，兩者是不同概念
@@ -100,6 +105,7 @@ async function runCurrent(outDir) {
   for (const [category, genreName] of Object.entries(GENRES)) {
     for (const type of TYPES) {
       for (const timeframe of TIMEFRAMES) {
+        if (!comboExists(type, timeframe)) continue;
         try {
           const n = await runCombo(timeframe, category, genreName, type, queryDate, outDir);
           console.log(`[${timeframe}/${genreName}/${type}] ${queryDate} -> ${n} 筆`);
@@ -121,11 +127,13 @@ async function runBackfill(outDir, maxTargets) {
   for (const [category, genreName] of Object.entries(GENRES)) {
     for (const type of TYPES) {
       // 每日榜：回補最近 DAILY_BACKFILL_DAYS 天
-      for (let d = 1; d <= DAILY_BACKFILL_DAYS; d++) {
-        const date = addDaysUTC(today, -d);
-        const fileName = `kkbox_kma_${genreName}_${type}_daily_${date}.csv`;
-        if (fs.existsSync(path.join(outDir, fileName))) continue;
-        targets.push({ timeframe: "daily", category, genreName, type, date });
+      if (comboExists(type, "daily")) {
+        for (let d = 1; d <= DAILY_BACKFILL_DAYS; d++) {
+          const date = addDaysUTC(today, -d);
+          const fileName = `kkbox_kma_${genreName}_${type}_daily_${date}.csv`;
+          if (fs.existsSync(path.join(outDir, fileName))) continue;
+          targets.push({ timeframe: "daily", category, genreName, type, date });
+        }
       }
       // 每週榜：回補最近 WEEKLY_BACKFILL_WEEKS 週
       for (let w = 1; w <= WEEKLY_BACKFILL_WEEKS; w++) {
