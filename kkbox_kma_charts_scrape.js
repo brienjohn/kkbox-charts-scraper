@@ -93,17 +93,19 @@ async function runCombo(timeframe, category, genreName, type, date, outDir) {
 }
 
 async function runCurrent(outDir) {
-  const today = taipeiDateString(0);
+  // KKBOX「今天」的榜通常還沒算完，查詢用「昨天」比較穩，
+  // captured_date（我們抓取的日期）另外記錄，兩者是不同概念
+  const queryDate = taipeiDateString(1);
   let total = 0;
   for (const [category, genreName] of Object.entries(GENRES)) {
     for (const type of TYPES) {
       for (const timeframe of TIMEFRAMES) {
         try {
-          const n = await runCombo(timeframe, category, genreName, type, today, outDir);
-          console.log(`[${timeframe}/${genreName}/${type}] ${today} -> ${n} 筆`);
+          const n = await runCombo(timeframe, category, genreName, type, queryDate, outDir);
+          console.log(`[${timeframe}/${genreName}/${type}] ${queryDate} -> ${n} 筆`);
           total += n;
         } catch (e) {
-          console.warn(`[warn] ${timeframe}/${genreName}/${type}/${today} 失敗：${e.message}`);
+          console.warn(`[warn] ${timeframe}/${genreName}/${type}/${queryDate} 失敗：${e.message}`);
         }
         await new Promise((r) => setTimeout(r, 300));
       }
