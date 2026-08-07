@@ -1,0 +1,36 @@
+name: Scrape KKBOX Weekly/Album Charts (kma.kkbox.com)
+
+on:
+  schedule:
+    - cron: "0 5 * * *"   # 每天 UTC 05:00 = 台北 13:00
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "current 或 backfill"
+        required: false
+        default: "current"
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Determine mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=current" >> "$GITHUB_OUTPUT"
+          fi
+      - run: node kkbox_kma_charts_scrape.js --mode ${{ steps.mode.outputs.mode }}
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git diff --staged --quiet || git commit -m "KKBOX kma charts snapshot $(date -u +%Y-%m-%d)"
+          git push
