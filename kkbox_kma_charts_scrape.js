@@ -16,8 +16,8 @@ const TYPES = ["song", "newrelease", "album"];
 const TIMEFRAMES = ["daily", "weekly"];
 const TERRITORY = "tw";
 
-const DAILY_BACKFILL_DAYS = 5;
-const WEEKLY_BACKFILL_WEEKS = 8;
+// 回溯要抓到多早（含）為止，不用再手動調天數/週數上限
+const BACKFILL_TARGET_DATE = "2026-01-01";
 
 function taipeiDateString(offsetDays = 0) {
   const d = new Date();
@@ -86,6 +86,17 @@ async function runCombo(timeframe, category, genreName, type, date, outDir) {
   const ctx = { today: taipeiDateString(0), timeframe, genreName, type, date };
   const { returnedDate, rows } = await fetchChart(timeframe, category, type, date);
   ctx.returnedDate = returnedDate;
+  // KKBOX 沒資料時不會回錯誤，而是靜默換成最近的有效期數。
+  // 差距太大就印警告，避免以後把回溯目標調更早時，實際上已經超出歷史資料範圍卻沒發現
+  if (returnedDate) {
+    const diffDays = Math.abs((new Date(returnedDate) - new Date(date)) / 86400000);
+    const threshold = timeframe === "daily" ? 3 : 10;
+    if (diffDays > threshold) {
+      console.warn(
+        `[warn] ${timeframe}/${genreName}/${type} 要求 ${date}，KKBOX 卻回了 ${returnedDate}（差 ${Math.round(diffDays)} 天），可能已經超出歷史資料範圍`
+      );
+    }
+  }
   const mapped = rows.map((e) => mapEntry(e, ctx));
   const fileName = `kkbox_kma_${genreName}_${type}_${timeframe}_${date}.csv`;
   writeCsvWithBom(path.join(outDir, fileName), mapped);
@@ -123,21 +134,25 @@ async function runCurrent(outDir) {
 async function runBackfill(outDir, maxTargets) {
   const targets = [];
   const today = taipeiDateString(0);
+  // 安全上限，防呆用（避免日期算錯時無限迴圈）：日榜實際約需 240 步、週榜約需 35 步就會先停
+  const MAX_STEPS = 400;
 
   for (const [category, genreName] of Object.entries(GENRES)) {
     for (const type of TYPES) {
-      // 每日榜：回補最近 DAILY_BACKFILL_DAYS 天
+      // 每日榜：往回跳到 BACKFILL_TARGET_DATE 為止
       if (comboExists(type, "daily")) {
-        for (let d = 1; d <= DAILY_BACKFILL_DAYS; d++) {
+        for (let d = 1; d <= MAX_STEPS; d++) {
           const date = addDaysUTC(today, -d);
+          if (date < BACKFILL_TARGET_DATE) break;
           const fileName = `kkbox_kma_${genreName}_${type}_daily_${date}.csv`;
           if (fs.existsSync(path.join(outDir, fileName))) continue;
           targets.push({ timeframe: "daily", category, genreName, type, date });
         }
       }
-      // 每週榜：回補最近 WEEKLY_BACKFILL_WEEKS 週
-      for (let w = 1; w <= WEEKLY_BACKFILL_WEEKS; w++) {
+      // 每週榜：往回跳到 BACKFILL_TARGET_DATE 為止
+      for (let w = 1; w <= MAX_STEPS; w++) {
         const date = addDaysUTC(today, -7 * w);
+        if (date < BACKFILL_TARGET_DATE) break;
         const fileName = `kkbox_kma_${genreName}_${type}_weekly_${date}.csv`;
         if (fs.existsSync(path.join(outDir, fileName))) continue;
         targets.push({ timeframe: "weekly", category, genreName, type, date });
@@ -146,7 +161,8 @@ async function runBackfill(outDir, maxTargets) {
   }
 
   const batch = targets.slice(0, maxTargets);
-  console.log(`[backfill] 這次處理 ${batch.length} 組（還有 ${Math.max(0, targets.length - batch.length)} 組留到下次）`);
+  const remaining = Math.max(0, targets.length - batch.length);
+  console.log(`[backfill] 這次處理 ${batch.length} 組（還有 ${remaining} 組留到下次）`);
 
   for (const t of batch) {
     try {
@@ -157,12 +173,18 @@ async function runBackfill(outDir, maxTargets) {
     }
     await new Promise((r) => setTimeout(r, 300));
   }
+
+  if (remaining === 0) {
+    console.log(`[backfill] ✅ 全部抓完了——已經回溯到 ${BACKFILL_TARGET_DATE}，之後不用再手動觸發`);
+  }
 }
 
 async function main() {
   const mode = process.argv.includes("--mode") ? process.argv[process.argv.indexOf("--mode") + 1] : "current";
   const maxTargetsIdx = process.argv.indexOf("--max-targets");
-  const maxTargets = maxTargetsIdx > -1 ? parseInt(process.argv[maxTargetsIdx + 1], 10) : 15;
+  // 這支是純 JSON API 請求，沒有瀏覽器開銷，跑起來比 YouTube 那支快很多；
+  // 總量抓到 2026-01-01 大概快 3000 組，預設值調高避免要手動重跑幾百次
+  const maxTargets = maxTargetsIdx > -1 ? parseInt(process.argv[maxTargetsIdx + 1], 10) : 1000;
   const outDir = "data";
 
   if (mode === "backfill") {
