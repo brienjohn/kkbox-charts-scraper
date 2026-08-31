@@ -47,9 +47,15 @@ function writeCsvWithBom(filePath, rows) {
   fs.writeFileSync(filePath, "\uFEFF" + toCsv(rows), "utf8");
 }
 
-async function fetchChart(timeframe, category, type, date) {
+async function fetchChart(timeframe, category, type, date, attempt = 1) {
   const url = `https://kma.kkbox.com/charts/api/v1/${timeframe}?category=${category}&date=${date}&lang=en&limit=50&terr=${TERRITORY}&type=${type}`;
   const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (res.status === 429 && attempt <= 3) {
+    // 被限流了，等久一點（隨重試次數拉長）再試，最多重試 3 次
+    const waitMs = 3000 * attempt;
+    await new Promise((r) => setTimeout(r, waitMs));
+    return fetchChart(timeframe, category, type, date, attempt + 1);
+  }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
   const arr = data?.data?.charts?.[type];
